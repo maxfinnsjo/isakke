@@ -1,0 +1,35 @@
+# ISAKKE slim demo on the shared VPS (2 vCPU, ~2 GB RAM free next to other apps): search mode, no GPU, no generated answers.
+# Access: https://isakke.206.168.215.98.sslip.io/ via caddy-docker-proxy and the shared caddy-net, same as jobhunt. No ports published.
+# Memory is capped hard (2g Ollama + 256m app) and bge-m3 unloads after 60 s idle, so an idle demo costs ~100 MB.
+services:
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    environment: { OLLAMA_KEEP_ALIVE: 60s, OLLAMA_MAX_LOADED_MODELS: "1" }
+    volumes: [ollama:/root/.ollama]
+    healthcheck: { test: ["CMD", "ollama", "list"], interval: 5s, retries: 30 }
+  models:
+    image: ollama/ollama
+    environment: { OLLAMA_HOST: "http://ollama:11434" }
+    entrypoint: ["ollama", "pull", "bge-m3"]
+    depends_on: { ollama: { condition: service_healthy } }
+    restart: "no"
+  isakke:
+    build: .
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    environment: { OLLAMA: "http://ollama:11434", CHAT_MODEL: "", DECIDER_MODEL: "", MIN_SCORE: "0.48", RATE_LIMIT: "20" }
+    depends_on: { models: { condition: service_completed_successfully } }
+    networks: [default, caddy-net]
+    labels:
+      caddy: isakke.206.168.215.98.sslip.io
+      caddy.reverse_proxy: "{{upstreams 8095}}"
+volumes:
+  ollama:
+networks:
+  caddy-net:
+    external: true
+    name: caddy-net

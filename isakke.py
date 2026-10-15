@@ -9,7 +9,7 @@
 
 Needs Ollama ($OLLAMA, default http://localhost:11434) with an embedding model and a chat model.
 """
-import csv, io, json, os, re, sys, urllib.request
+import csv, io, json, os, re, sys, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -21,6 +21,7 @@ OLLAMA = os.environ.get("OLLAMA", "http://localhost:11434")
 EMBED = os.environ.get("EMBED_MODEL", "bge-m3")
 CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")  # "" = no generated answer: show the closest paragraphs (the slim profile, runs on any CPU)
 TOP_K = 6
+RATE = int(os.environ.get("RATE_LIMIT", 0))  # questions per minute per client IP for a public demo, 0 = off (SCB itself allows 30 calls per 10 s)
 MIN_SCORE = float(os.environ.get("MIN_SCORE", 0.30))  # best paragraph similarity below this = off-topic; the slim profile uses 0.48
 DECIDER = os.environ.get("DECIDER_MODEL", "isakke-decider")  # Ollama decision model (see decider.Modelfile); "" turns the off-topic check off
 SCB = "https://api.scb.se/OV0104/v1/doris/sv/ssd/AM/AM0110/AM0110A/LonYrkeRegion4AN"  # monthly pay by occupation (SSYK 2012), CC0
@@ -204,6 +205,17 @@ def ask(question, idx):
     return {"answer": r["message"]["content"], "sources": hits}
 
 
+recent = {}  # client -> times of its requests in the last minute
+
+
+def limited(client):
+    now = time.time()
+    if len(recent) > 10000:
+        recent.clear()
+    times = recent[client] = [t for t in recent.get(client, []) if now - t < 60] + [now]
+    return bool(RATE) and len(times) > RATE
+
+
 class H(BaseHTTPRequestHandler):
     idx = None
 
@@ -218,6 +230,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             return self.send(200, (HERE / "index.html").read_text(), "text/html; charset=utf-8")
+        if self.path == "/api/mode":
+            return self.send(200, json.dumps({"chat": bool(CHAT)}))
         self.send(404, '{"error":"not found"}')
 
     def do_POST(self):
@@ -229,6 +243,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(400, '{"error":"send {\\"question\\": \\"...\\"}"}')
         if not q:
             return self.send(400, '{"error":"empty question"}')
+        if limited(self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or self.client_address[0]):  # behind Caddy
+            return self.send(429, '{"error":"för många frågor, vänta en minut / too many questions, wait a minute"}')
         try:
             self.send(200, json.dumps(ask(q, H.idx), ensure_ascii=False))
         except OSError as e:  # Ollama or SCB down or slow
@@ -253,6 +269,10 @@ def test():
     las = split("LAS", "Lag (1982:80) om anställningsskydd\n\nKälla: X\n\n\n7 § Uppsägning ska vara\nsakligt grundad.\n\n"
                        "8 § Tid enligt\n37 kap. 3 § socialförsäkringsbalken.\n\nÖvergångsbestämmelser\n\n22 § i den äldre lydelsen.")
     assert [l for l, _ in las] == ["LAS 7 §", "LAS 8 §"] and las[0][1].endswith("sakligt grundad."), las
+    global RATE
+    RATE = 2
+    assert [limited("a"), limited("a"), limited("a"), limited("b")] == [False, False, True, False]
+    RATE = 0
     print("ok")
 
 

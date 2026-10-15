@@ -24,12 +24,14 @@
   input { flex:1; font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
   form button { font:inherit; font-weight:700; padding:0 20px; border:0; border-radius:8px; background:var(--red); color:#fff; cursor:pointer; }
   .note { color:var(--mute); font-size:14px; }
+  #mode { display:none; border:1px dashed var(--red); border-radius:8px; padding:8px 12px; margin:0 0 18px; font-size:15px; }
 </style>
 </head>
 <body>
 <main>
   <h1>ISAKKE</h1>
   <p class="tag">Arbetarkämpen. Frågar du om dina rättigheter på jobbet, svarar jag ur svensk arbetsrätt och visar exakt vilken paragraf. Ask in English too.</p>
+  <p id="mode"><b>Sökläge / Search mode:</b> den här demon visar närmaste paragrafer, ingen AI-skriven text. / This demo shows the closest paragraphs, no AI-written answer.</p>
   <div class="chips" id="chips"></div>
   <div id="log"></div>
   <p class="note">Bygger på LAS, MBL, arbetstidslagen, semesterlagen, arbetsmiljölagen, diskrimineringslagen, sjuklönelagen, föräldraledighetslagen, förtroendemannalagen och visselblåsarlagen (Riksdagens öppna data). Kollektivavtal ger ofta mer än lagen. Inte juridisk rådgivning: fråga facket.</p>
@@ -39,6 +41,7 @@
 const EXAMPLES = ["Hur lång uppsägningstid har jag?", "Får chefen kräva övertid?", "Vad gäller vid provanställning?", "Can I be fired for joining a union?", "Vem betalar när jag är sjuk?", "Vad tjänar en sjuksköterska?"];
 const log = document.getElementById("log"), q = document.getElementById("q");
 const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+fetch("/api/mode").then(r => r.json()).then(m => { if (!m.chat) document.getElementById("mode").style.display = "block"; });
 document.getElementById("chips").innerHTML = EXAMPLES.map(e => `<button type="button">${e}</button>`).join("");
 document.getElementById("chips").onclick = e => { if (e.target.tagName === "BUTTON") ask(e.target.textContent); };
 document.getElementById("f").onsubmit = e => { e.preventDefault(); if (q.value.trim()) ask(q.value.trim()); q.value = ""; };
