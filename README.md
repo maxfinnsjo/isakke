@@ -6,6 +6,8 @@ A small RAG (retrieval-augmented generation) app that runs fully local: no cloud
 
 ![ISAKKE answering a notice-period question, with the cited paragraphs below](docs/screenshot.png)
 
+[56 s screencast](docs/demo.mp4): a Swedish law question, an English one, and a pay question.
+
 ## How it works
 
 1. **Fetch:** ten Swedish labour laws come from Riksdagen's open data API (public domain): LAS, MBL, the Working Hours Act, the Holiday Act, the Work Environment Act, the Discrimination Act, the Sick Pay Act, the Parental Leave Act, the Union Representatives Act and the Whistleblower Act.
