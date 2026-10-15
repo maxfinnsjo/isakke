@@ -2,7 +2,7 @@
 
 **The workers' champion.** Ask about your rights at work in Sweden, in Swedish or English. ISAKKE answers from the actual labour law and shows exactly which paragraph it used.
 
-A small RAG (retrieval-augmented generation) app that runs fully local: no cloud API, no data leaves the machine.
+A small RAG (retrieval-augmented generation) app, local first: the desktop setup runs entirely on your own machine, with no cloud API and no data leaving it. The public demo instead lets free-tier hosted models write the answers (see below).
 
 ![ISAKKE answering a notice-period question, with the cited paragraphs below](docs/screenshot.png)
 
@@ -19,6 +19,30 @@ A small RAG (retrieval-augmented generation) app that runs fully local: no cloud
 **Off-topic check (decision model):** a question that is clearly about work passes, one that clearly isn't ("Hur lagar jag pasta?") gets a short refusal, and only the borderline band is judged by a decision model, [Together's `tev1`](https://ollama.com/library/tev1) through Ollama's `/v1/systemone` endpoint, which returns a probability instead of text. It runs on the CPU (`decider.Modelfile`) so it doesn't push the chat model out of a small GPU. It is optional: without it, only the clearly off-topic are refused. Measured on 12 on-topic and 7 off-topic questions: the retrieval score alone separates them by a margin of 0.05, `tev1` by 0.80 vs 0.02. Using it to route questions to a single law did not help: retrieval already ranked the right paragraph in the top six for 16 of 16 test questions.
 
 Plain Python and numpy, one file (`isakke.py`), a stdlib web server and one HTML page. At this size (610 vectors) a matrix product beats running a vector database.
+
+## The stack at a glance
+
+```
+question ─┬─ pay question ("vad tjänar en sjuksköterska?") ──► SCB open API, live ────────────────┐
+          └─ law question ─► bge-m3 embedding ─► cosine over 610 § vectors (numpy)                  │
+                              └─ off-topic check: score, then the tev1 decision model if borderline │
+                                                                                                    ▼
+                                  the six closest paragraphs, or the SCB figures, become the sources
+                                                                                                    ▼
+   desktop: gemma4:e4b via Ollama (GPU)  |  demo: hosted free-tier chain  |  slim: show the paragraphs
+                                                                                                    ▼
+                  answer + cited sources (+ a flag for numbers not in the sources) ─► web page, one JSON log line
+```
+
+| Part | What it is |
+|---|---|
+| App | one Python file (`isakke.py`), stdlib web server, numpy for the vector search, one HTML page |
+| Models | [Ollama](https://ollama.com): `bge-m3` embeddings, `gemma4:e4b` answers (desktop), `tev1` decision model on the CPU (optional) |
+| Data | Swedish laws from Riksdagen's open data, pay statistics from SCB (both open, no keys) |
+| Packaging | Docker Compose, two profiles (desktop, slim) |
+| Demo hosting | a shared 2 vCPU VPS, Caddy for HTTPS, `deploy/deploy.sh`, a per-IP rate limit and capped containers |
+
+The desktop profile translates the question with the chat model first. The slim profile has no chat model to spare, so it adds Swedish terms from a small glossary to English questions and recognises pay questions with a regex.
 
 ## Run
 
@@ -49,7 +73,9 @@ Then http://127.0.0.1:8095. The slim profile exists because small models can't d
 
 ![The live slim demo: a hosted free-tier model writes the answer from the retrieved paragraphs, shown below it](docs/live.png)
 
-Settings: `CHAT_gemma4:e4b`, `EMBED_gemma4:e4b`, `OLLAMA`, `PORT`, `INDEX`.
+Settings (environment variables): `CHAT_MODEL` (empty = no local chat model), `EMBED_MODEL`, `DECIDER_MODEL` (empty = off), `OLLAMA`, `HOST` (default 127.0.0.1), `PORT`, `INDEX`, `MIN_SCORE`, `RATE_LIMIT` (per IP per minute, 0 = off), and for hosted models `LLM_CHAIN`, `LLM_DAILY_MAX`, `LLM_PER_IP_DAY` plus the keys.
+
+Tests: `python3 isakke.py test` (paragraph splitter, number check, rate limiter); `python3 bench.py MODEL…` runs three questions with known answers against a model.
 
 ## Optional: hosted free-tier models
 
@@ -58,3 +84,7 @@ The slim demo can let free-tier models write the answer while retrieval, the SCB
 ## Limits
 
 ISAKKE knows the law, not your collective agreement (kollektivavtal), which often gives more. It is not legal advice; it points you to your union, safety representative or a lawyer when the law isn't enough.
+
+## Licence
+
+[PolyForm Noncommercial 1.0.0](LICENSE): free to read, run and modify for non-commercial use. The laws and statistics it uses are public data.
