@@ -21,6 +21,19 @@ OLLAMA = os.environ.get("OLLAMA", "http://localhost:11434")
 EMBED = os.environ.get("EMBED_MODEL", "bge-m3")
 CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")  # "" = no generated answer: show the closest paragraphs (the slim profile, runs on any CPU)
 TOP_K = 6
+# Optional hosted free-tier models write the answer (same pattern as skandinavetnyhets). LLM_CHAIN="provider:model,provider:model" is tried in
+# order; a model that answers 429/402 is skipped until its limit resets. Keys come from the environment (a .env next to compose on the VPS).
+PROVIDERS = {  # OpenAI-compatible endpoints: base URL and the variable holding the key
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "LLM_API_KEY"),
+    "groq": ("https://api.groq.com/openai/v1", "GROQ_API_KEY"),
+    "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),  # only ":free" models are used, see generate()
+    "ollamacloud": ("https://ollama.com/v1", "OLLAMA_API_KEY"),
+    "ollama": ("http://localhost:11434/v1", ""),
+    "default": (os.environ.get("LLM_BASE_URL", ""), "LLM_API_KEY"),
+}
+LLM_CHAIN = [tuple(x.strip().split(":", 1)) for x in os.environ.get("LLM_CHAIN", "").split(",") if ":" in x]
+LLM_DAILY_MAX = int(os.environ.get("LLM_DAILY_MAX", 200))     # AI answers per day in total, to spare the free quotas
+LLM_PER_IP_DAY = int(os.environ.get("LLM_PER_IP_DAY", 10))    # and per client; beyond that the page shows the paragraphs
 RATE = int(os.environ.get("RATE_LIMIT", 0))  # questions per minute per client IP for a public demo, 0 = off (SCB itself allows 30 calls per 10 s)
 MIN_SCORE = float(os.environ.get("MIN_SCORE", 0.30))  # best paragraph similarity below this = off-topic; the slim profile uses 0.48
 DECIDER = os.environ.get("DECIDER_MODEL", "isakke-decider")  # Ollama decision model (see decider.Modelfile); "" turns the off-topic check off
@@ -177,7 +190,67 @@ def on_topic(question, best):
         return True
 
 
-def ask(question, idx):
+blocked = {}  # "provider:model" -> unix time until which it is skipped
+today = {"day": "", "total": 0, "client": {}}  # AI answers given today
+
+
+def generate(question, hits, client):
+    """(answer, "provider:model") from the first model in LLM_CHAIN that answers, or (None, reason)."""
+    now = time.strftime("%Y-%m-%d")
+    if today["day"] != now:
+        today.update(day=now, total=0, client={})
+    if today["total"] >= LLM_DAILY_MAX or today["client"].get(client, 0) >= LLM_PER_IP_DAY:
+        return None, "dagens AI-gräns är nådd / the daily AI limit is reached"
+    sources = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text']}" for n, h in enumerate(hits))
+    prompt = PROMPT.format(sources=sources, question=question)
+    for provider, model in LLM_CHAIN:
+        name = f"{provider}:{model}"
+        base, key_var = PROVIDERS[provider]
+        key = os.environ.get(key_var, "") if key_var else ""
+        if blocked.get(name, 0) > time.time() or not base or (key_var and not key):
+            continue
+        if provider == "openrouter" and not model.endswith(":free"):  # never spend credits
+            continue
+        body = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2, "max_tokens": 800}
+        if "gpt-oss" in model or provider == "gemini":  # thinking models: keep the thinking short or it eats max_tokens
+            body["reasoning_effort"] = "low"
+        elif provider == "ollama":  # a local gemma4 thinks by default on /v1 and used all 800 tokens before answering
+            body["reasoning_effort"] = "none"
+        req = urllib.request.Request(base.rstrip("/") + "/chat/completions", json.dumps(body).encode(),
+                                     {"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                choice = json.load(r)["choices"][0]
+            text = (choice["message"].get("content") or "").strip()
+            if text and choice.get("finish_reason") != "length":
+                today["total"] += 1
+                today["client"][client] = today["client"].get(client, 0) + 1
+                return text, name
+        except urllib.error.HTTPError as e:
+            if e.code in (402, 429):  # out of the free quota: unknown reset, so pause 10 min (a day when it is not free at all)
+                blocked[name] = time.time() + (86400 if e.code == 402 else 600)
+        except (OSError, ValueError, KeyError, IndexError):
+            pass  # next model
+    return None, "ingen AI-modell svarade / no AI model answered"
+
+
+NUMBER_WORDS = {w: str(n) for n, ws in enumerate(["noll zero", "", "två two", "tre three", "fyra four", "fem five", "sex six", "sju seven", "åtta eight",
+                                                  "nio nine", "tio ten", "elva eleven", "tolv twelve"]) for w in ws.split()}
+NUMBER_WORDS.update({"tjugo": "20", "tjugofem": "25", "trettio": "30", "twenty": "20", "twenty-five": "25"})
+
+
+def numbers(text):
+    text = re.sub(r"\[\d+(?:[,\s]+\d+)*\]", " ", text)           # [1], [2, 3]: citation markers
+    text = re.sub(r"(?<=\d)[\s\u00a0](?=\d{3}\b)", "", text)       # 44 000
+    return {n.replace(",", ".") for n in re.findall(r"\d+(?:[.,]\d+)?", text)} | {NUMBER_WORDS[w] for w in re.findall(r"[\w-]+", text.lower()) if w in NUMBER_WORDS}
+
+
+def ungrounded(answer, question, hits):
+    """Numbers in the answer that the question and the cited paragraphs do not contain (a model that rounds, sums or invents)."""
+    return sorted(numbers(answer) - numbers(question + " " + " ".join(h["text"] for h in hits)))
+
+
+def ask(question, idx, client=""):
     if CHAT:
         # the laws are Swedish and bge-m3 ranks English queries worse (LAS 11 § was 12th for the notice question)
         sv = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0},
@@ -197,12 +270,21 @@ def ask(question, idx):
         top = np.argsort(sims)[::-1][:TOP_K]
         hits = [{"label": str(idx["labels"][i]), "text": str(idx["texts"][i])} for i in top]
     if not CHAT:
+        note = ""
+        if LLM_CHAIN:
+            text, model = generate(question, hits, client)
+            if text:
+                bad = ungrounded(text, question, hits)
+                if bad:
+                    note = f"Siffrorna {', '.join(bad)} finns inte ordagrant i källorna, kontrollera dem. / The number(s) {', '.join(bad)} are not in the sources verbatim, please check."
+                return {"answer": text, "sources": hits, "mode": "ai", "model": model, **({"note": note, "unchecked": bad} if bad else {})}
+            note = model + ": visar närmaste paragrafer / showing the closest paragraphs"
         top3 = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text'][:350]}{'…' if len(h['text']) > 350 else ''}" for n, h in enumerate(hits[:3]))
-        return {"answer": "Närmaste träffar (ingen AI-genererad text) / Closest matches (no AI-generated text):\n\n" + top3, "sources": hits}
+        return {"answer": "Närmaste träffar (ingen AI-genererad text) / Closest matches (no AI-generated text):\n\n" + top3, "sources": hits, "mode": "search", **({"note": note} if note else {})}
     sources = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text']}" for n, h in enumerate(hits))
     r = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0.2},
                            "messages": [{"role": "user", "content": PROMPT.format(sources=sources, question=question)}]})
-    return {"answer": r["message"]["content"], "sources": hits}
+    return {"answer": r["message"]["content"], "sources": hits, "mode": "ai", "model": CHAT}
 
 
 recent = {}  # client -> times of its requests in the last minute
@@ -218,7 +300,7 @@ def limited(client):
 
 def log(**kw):
     """One JSON line per event on stdout: `docker compose logs` is the demo's access log."""
-    print(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), **kw}, ensure_ascii=False), flush=True)
+    print(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()), **kw}, ensure_ascii=False), flush=True)
 
 
 class H(BaseHTTPRequestHandler):
@@ -243,7 +325,7 @@ class H(BaseHTTPRequestHandler):
             log(event="page", client=self.client(), ua=self.headers.get("User-Agent", "")[:80])
             return self.send(200, (HERE / "index.html").read_text(), "text/html; charset=utf-8")
         if self.path == "/api/mode":
-            return self.send(200, json.dumps({"chat": bool(CHAT)}))
+            return self.send(200, json.dumps({"chat": bool(CHAT or LLM_CHAIN), "hosted": bool(LLM_CHAIN and not CHAT)}))
         self.send(404, '{"error":"not found"}')
 
     def do_POST(self):
@@ -260,10 +342,11 @@ class H(BaseHTTPRequestHandler):
             return self.send(429, '{"error":"för många frågor, vänta en minut / too many questions, wait a minute"}')
         t = time.time()
         try:
-            r = ask(q, H.idx)
+            r = ask(q, H.idx, self.client())
             labels = [h["label"] for h in r["sources"]]
             log(event="ask", client=self.client(), q=q[:200], kind="refused" if not labels else "pay" if labels[0].startswith("SCB") else "law",
-                top=labels[:3], ms=round(1000 * (time.time() - t)))
+                top=labels[:3], mode=r.get("mode"), model=r.get("model"), unchecked=r.get("unchecked"), note=r.get("note"),
+                ms=round(1000 * (time.time() - t)))
             self.send(200, json.dumps(r, ensure_ascii=False))
         except OSError as e:  # Ollama or SCB down or slow
             log(event="error", client=self.client(), q=q[:200], error=str(e)[:200], ms=round(1000 * (time.time() - t)))
@@ -288,6 +371,10 @@ def test():
     las = split("LAS", "Lag (1982:80) om anställningsskydd\n\nKälla: X\n\n\n7 § Uppsägning ska vara\nsakligt grundad.\n\n"
                        "8 § Tid enligt\n37 kap. 3 § socialförsäkringsbalken.\n\nÖvergångsbestämmelser\n\n22 § i den äldre lydelsen.")
     assert [l for l, _ in las] == ["LAS 7 §", "LAS 8 §"] and las[0][1].endswith("sakligt grundad."), las
+    assert numbers("Du har rätt till tre månaders uppsägningstid [1, 2] och 44 000 kr, tjugofem dagar.") == {"3", "44000", "25"}
+    h = [{"text": "sjuklönen 80 procent, de följande tretton kalenderdagarna"}]
+    assert ungrounded("Arbetsgivaren betalar 80 procent [1] i 14 dagar.", "Vem betalar?", h) == ["14"]
+    assert ungrounded("Tretton dagar, 80 procent.", "", h) == []
     global RATE
     RATE = 2
     assert [limited("a"), limited("a"), limited("a"), limited("b")] == [False, False, True, False]

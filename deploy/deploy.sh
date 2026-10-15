@@ -37,6 +37,7 @@ echo "Syncing $(git rev-parse --short HEAD) to $VPS:~/$DIR/"
 [ -n "$DRY" ] || ssh "$VPS" "mkdir -p ~/$DIR"
 rsync -az --delete $DRY --info=stats1 -e ssh ./isakke.py ./index.html ./index.npz ./laws ./Dockerfile "$VPS:~/$DIR/"
 [ -n "$DRY" ] && exit 0
+ssh "$VPS" "touch ~/$DIR/.env && chmod 600 ~/$DIR/.env"  # keys live here, never uploaded (see .env.example)
 scp -q deploy/docker-compose.yml "$VPS:~/$DIR/docker-compose.yml"
 
 echo "Building and starting (first run pulls ~7 GB of images and the model)"

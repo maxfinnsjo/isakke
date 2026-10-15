@@ -51,6 +51,10 @@ Then http://127.0.0.1:8095. The slim profile exists because small models can't d
 
 Settings: `CHAT_gemma4:e4b`, `EMBED_gemma4:e4b`, `OLLAMA`, `PORT`, `INDEX`.
 
+## Optional: hosted free-tier models
+
+The slim demo can let free-tier models write the answer while retrieval, the SCB lookup and the citations stay local. Set `LLM_CHAIN="provider:model,…"` plus the keys (see `.env.example`; providers: gemini, groq, openrouter (`:free` models only), ollamacloud, or any OpenAI-compatible `default` via `LLM_BASE_URL`). Models are tried in order and one that runs out of quota is skipped until it resets. The number of AI answers is capped per day (`LLM_DAILY_MAX`, `LLM_PER_IP_DAY`); beyond the caps, or when every model fails, the page shows the closest paragraphs instead. Numbers in an answer that are not in the cited paragraphs are flagged under it. The page tells visitors that the question is sent to an external provider.
+
 ## Limits
 
 ISAKKE knows the law, not your collective agreement (kollektivavtal), which often gives more. It is not legal advice; it points you to your union, safety representative or a lawyer when the law isn't enough.

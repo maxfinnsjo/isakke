@@ -32,6 +32,7 @@
   <h1>ISAKKE</h1>
   <p class="tag">Arbetarkämpen. Frågar du om dina rättigheter på jobbet, svarar jag ur svensk arbetsrätt och visar exakt vilken paragraf. Ask in English too.</p>
   <p id="mode"><b>Sökläge / Search mode:</b> den här demon visar närmaste paragrafer, ingen AI-skriven text. / This demo shows the closest paragraphs, no AI-written answer.</p>
+  <p id="hosted" class="note" style="display:none">Svaret skrivs av en AI-modell hos en extern gratisleverantör och din fråga skickas dit. / The answer is written by an AI model at an external free-tier provider, and your question is sent there.</p>
   <div class="chips" id="chips"></div>
   <div id="log"></div>
   <p class="note">Bygger på LAS, MBL, arbetstidslagen, semesterlagen, arbetsmiljölagen, diskrimineringslagen, sjuklönelagen, föräldraledighetslagen, förtroendemannalagen och visselblåsarlagen (Riksdagens öppna data). Kollektivavtal ger ofta mer än lagen. Inte juridisk rådgivning: fråga facket.</p>
@@ -41,7 +42,7 @@
 const EXAMPLES = ["Hur lång uppsägningstid har jag?", "Får chefen kräva övertid?", "Vad gäller vid provanställning?", "Can I be fired for joining a union?", "Vem betalar när jag är sjuk?", "Vad tjänar en sjuksköterska?"];
 const log = document.getElementById("log"), q = document.getElementById("q");
 const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-fetch("/api/mode").then(r => r.json()).then(m => { if (!m.chat) document.getElementById("mode").style.display = "block"; });
+fetch("/api/mode").then(r => r.json()).then(m => { if (!m.chat) document.getElementById("mode").style.display = "block"; else if (m.hosted) document.getElementById("hosted").style.display = "block"; });
 document.getElementById("chips").innerHTML = EXAMPLES.map(e => `<button type="button">${e}</button>`).join("");
 document.getElementById("chips").onclick = e => { if (e.target.tagName === "BUTTON") ask(e.target.textContent); };
 document.getElementById("f").onsubmit = e => { e.preventDefault(); if (q.value.trim()) ask(q.value.trim()); q.value = ""; };
@@ -55,6 +56,7 @@ async function ask(text) {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
     m.querySelector(".a").textContent = d.answer;
+    if (d.model || d.note) m.querySelector(".a").insertAdjacentHTML("afterend", `<p class="note">${d.model ? "AI-skriven utifrån källorna / AI-written from the sources: " + esc(d.model) + ". " : ""}${esc(d.note || "")}</p>`);
     m.insertAdjacentHTML("beforeend", `<details><summary>Källor (${d.sources.length})</summary>${d.sources.map((s, n) => `<p><b>[${n + 1}] ${esc(s.label)}</b> ${esc(s.text)}</p>`).join("")}</details>`);
   } catch (err) { m.querySelector(".a").textContent = "Något gick fel: " + err.message; }
 }

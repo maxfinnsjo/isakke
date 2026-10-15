@@ -25,6 +25,7 @@ services:
     environment: { OLLAMA: "http://ollama:11434", CHAT_MODEL: "", DECIDER_MODEL: "", MIN_SCORE: "0.48", RATE_LIMIT: "20" }
     depends_on: { models: { condition: service_completed_successfully } }
     logging: *logs
+    env_file: [{ path: .env, required: false }]  # LLM_CHAIN and the keys, only on the VPS; without them the demo stays in search mode
     networks: [default, caddy-net]
     labels:
       caddy: isakke.206.168.215.98.sslip.io

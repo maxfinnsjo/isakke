@@ -31,7 +31,7 @@
 
 ## Roadmap
 - ARM / phone: run the slim profile on an ARM host or a phone (Termux + Ollama). Parked by Max, not started.
-- A hosted free-tier model to write the answer on the slim demo (idea from the skandinavetnyhets app), keeping the RAG and the citations. Not started.
+- Hosted free-tier models for the slim demo: BUILT, NOT DEPLOYED, no keys tried. To switch on: put LLM_CHAIN + keys in ~/apps/isakke/.env on the VPS (see .env.example, copy from skandinavetnyhets' .env), `deploy/deploy.sh`. Tested with a fake provider (order, 429/402 blocking, per-client cap, fallback to search mode) and with local gemma4 over /v1 (note: a thinking model needs reasoning_effort set or it uses all max_tokens; done per provider). Free quotas are shared with skandinavetnyhets if the same keys are used: consider separate keys or models. Add providers in PROVIDERS.
 
 ## Logging
 `deploy/deploy.sh --logs` follows the live demo's log: one JSON line per page visit, question (with client IP, kind law/pay/refused, top paragraphs, ms), rate-limit hit or backend error. Docker keeps 3 x 5 MB, then rotates.
