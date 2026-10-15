@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ISAKKE: a workers' champion that answers from Swedish labour law, with sources.
 
-  python3 isakke.py fetch    download the laws from Riksdagen's open data into laws/
+  python3 isakke.py fetch    download the laws from Riksdagen's open data (and SCB's occupation list) into laws/
   python3 isakke.py index    split them by paragraph (§) and embed them -> index.npz
   python3 isakke.py serve    web chat on $PORT (default 8095); builds the index first if missing
   python3 isakke.py ask "..."  one question in the terminal
@@ -9,7 +9,7 @@
 
 Needs Ollama ($OLLAMA, default http://localhost:11434) with an embedding model and a chat model.
 """
-import json, os, re, sys, urllib.request
+import csv, io, json, os, re, sys, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -21,6 +21,7 @@ OLLAMA = os.environ.get("OLLAMA", "http://localhost:11434")
 EMBED = os.environ.get("EMBED_MODEL", "bge-m3")
 CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")
 TOP_K = 6
+SCB = "https://api.scb.se/OV0104/v1/doris/sv/ssd/AM/AM0110/AM0110A/LonYrkeRegion4AN"  # monthly pay by occupation (SSYK 2012), CC0
 
 # Short name -> SFS number. The laws a worker in Sweden runs into most.
 LAWS = {
@@ -50,6 +51,11 @@ def fetch():
         text = urllib.request.urlopen(url, timeout=60).read().decode("utf-8")
         (LAWS_DIR / f"{short}.txt").write_text(text)
         print(f"{short:7} {sfs:10} {text.splitlines()[0]}")
+    meta = json.load(urllib.request.urlopen(SCB, timeout=60))
+    occ = next(v for v in meta["variables"] if v["code"] == "Yrke2012")
+    pairs = [(c, t) for c, t in zip(occ["values"], occ["valueTexts"]) if c != "0000"]
+    (LAWS_DIR / "ssyk.json").write_text(json.dumps(pairs, ensure_ascii=False))
+    print(f"SCB     {len(pairs)} occupations")
 
 
 PARA = re.compile(r"^(\d+ [a-z]? ?§)\s", re.M)
@@ -85,13 +91,16 @@ def embed(texts):
 def index():
     chunks = [c for f in sorted(LAWS_DIR.glob("*.txt")) for c in split(f.stem, f.read_text())]
     print(f"{len(chunks)} paragraphs, embedding with {EMBED}…")
-    np.savez(INDEX, vecs=embed([t for _, t in chunks]), labels=[l for l, _ in chunks], texts=[t for _, t in chunks])
+    occ = json.loads((LAWS_DIR / "ssyk.json").read_text())
+    np.savez(INDEX, vecs=embed([t for _, t in chunks]), labels=[l for l, _ in chunks], texts=[t for _, t in chunks],
+             occ_vecs=embed([t for _, t in occ]), occ_codes=[c for c, _ in occ], occ_titles=[t for _, t in occ])
 
 
 PROMPT = """You are ISAKKE, a workers' champion who helps employees in Sweden understand their rights.
 Use ONLY the sources below and cite them as [1], [2] etc. Start with a direct one-sentence answer to the question. State plainly who must do what (e.g. "your employer pays"), using the law's own terms.
 Terms: sjuklön = sick pay, paid by the employer for the first 14 days (the sick pay period); sjukpenning = sickness benefit from Försäkringskassan, a different thing; karensavdrag = the unpaid qualifying-day deduction.
 If the sources are not enough, say so and suggest the union, a safety representative or a lawyer.
+If the sources are about a different occupation than the one asked, say so instead of answering for the wrong one.
 Collective agreements often give more than the law. Be short, factual and warm: 2-5 short sentences, no drama. This is not legal advice.
 
 Sources:
@@ -102,13 +111,45 @@ Question: {question}
 Answer in the language of the question above (Swedish question: Swedish answer; English question: English answer)."""
 
 
+PAY_OR_TRANSLATE = ("Only if the text asks what people in a named profession earn on average, reply exactly "
+                    "`LÖN: <the profession in Swedish, singular>`, e.g. \"What does a nurse earn?\" -> `LÖN: sjuksköterska`. "
+                    "Questions about the asker's own pay, sick pay, raises or who pays are NOT such questions. "
+                    "In every other case reply with only the Swedish translation of the text (unchanged if already Swedish).\n\n")
+
+
+def pay_hits(profession, idx):
+    """Occupations closest to the profession, the biggest (most employees) first, with latest average monthly pay from SCB (live)."""
+    stem = profession.lower()[:-2]  # embeddings alone put "sjuksköterska" next to "barnsköterskor"
+    ranked = np.argsort(idx["occ_vecs"] @ embed([profession])[0])[::-1]
+    same = [i for i in ranked if stem in str(idx["occ_titles"][i]).lower()]
+    codes = [str(idx["occ_codes"][i]) for i in (same or ranked[:3])[:20]]
+    sel = lambda code, vals: {"code": code, "selection": {"filter": "item", "values": vals}}
+    body = {"query": [sel("Region", ["SE"]), sel("Sektor", ["0"]), sel("Yrke2012", codes), sel("Kon", ["1+2", "1", "2"]),
+                      sel("ContentsCode", ["000007AS", "000007AP"]), {"code": "Tid", "selection": {"filter": "top", "values": ["1"]}}],
+            "response": {"format": "csv"}}
+    req = urllib.request.Request(SCB, json.dumps(body).encode(), {"Content-Type": "application/json"})
+    rows = list(csv.reader(io.StringIO(urllib.request.urlopen(req, timeout=30).read().decode("latin-1"))))
+    year = rows[0][-1].split()[-1]
+    occs = {}
+    for _, _, occ, sex, pay, n in rows[1:]:
+        if pay.isdigit():
+            occs.setdefault(occ, {})[sex] = (int(pay), int(n) if n.isdigit() else 0)
+    best = sorted(occs.items(), key=lambda kv: -kv[1].get("totalt", (0, 0))[1])[:3]
+    return [{"label": f"SCB {occ.split(' ', 1)[1]}",
+             "text": f"SCB lönestrukturstatistik {year}, {occ}, genomsnittlig månadslön, alla sektorer, hela Sverige: "
+                     + ", ".join(f"{k} {p} kr" for k, (p, _) in sex.items()) + f"; {sex.get('totalt', (0, 0))[1]} anställda."}
+            for occ, sex in best]
+
+
 def ask(question, idx):
     # the laws are Swedish and bge-m3 ranks English queries worse (LAS 11 § was 12th for the notice question)
     sv = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0},
-                            "messages": [{"role": "user", "content": "Translate to Swedish, output only the translation: " + question}]})
-    q = embed([sv["message"]["content"].strip() or question])[0]
-    top = np.argsort(idx["vecs"] @ q)[::-1][:TOP_K]
-    hits = [{"label": str(idx["labels"][i]), "text": str(idx["texts"][i])} for i in top]
+                            "messages": [{"role": "user", "content": PAY_OR_TRANSLATE + question}]})["message"]["content"].strip()
+    if sv.startswith("LÖN:"):
+        hits = pay_hits(sv[4:].strip(), idx)
+    else:
+        top = np.argsort(idx["vecs"] @ embed([sv or question])[0])[::-1][:TOP_K]
+        hits = [{"label": str(idx["labels"][i]), "text": str(idx["texts"][i])} for i in top]
     sources = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text']}" for n, h in enumerate(hits))
     r = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0.2},
                            "messages": [{"role": "user", "content": PROMPT.format(sources=sources, question=question)}]})
@@ -142,11 +183,15 @@ class H(BaseHTTPRequestHandler):
             return self.send(400, '{"error":"empty question"}')
         try:
             self.send(200, json.dumps(ask(q, H.idx), ensure_ascii=False))
-        except OSError as e:  # Ollama down or slow
-            self.send(503, json.dumps({"error": f"model unavailable: {e}"}))
+        except OSError as e:  # Ollama or SCB down or slow
+            self.send(503, json.dumps({"error": f"backend unavailable (Ollama or SCB): {e}"}))
 
 
 def load():
+    idx = dict(np.load(INDEX))
+    if "occ_vecs" in idx:
+        return idx
+    index()  # index.npz from before the SCB pay feature
     return dict(np.load(INDEX))
 
 

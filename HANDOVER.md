@@ -11,7 +11,7 @@
 1. Done: default chat model is gemma4:e4b (`isakke.py`, `compose.yml`; fallback qwen3.5:4b). Prompt is English with the answer-language rule last; the question is translated to Swedish before embedding (English queries ranked LAS 11 § 12th, now top). Karensavdrag retrieves SjLL 6 §.
 2. Done: sick pay. A terminology line (sjuklön = employer-paid sick pay, not sjukpenning) and "start with a direct one-sentence answer" in the prompt; the employer is named in 6 of 6 runs (Swedish and English), `bench.py gemma4:e4b` is 3/3 correct at 1.3–1.8 s.
 3. Screenshot is in `docs/screenshot.png` and the README. Done: public repo https://github.com/maxfinnsjo/isakke (local branch `development` tracks `origin/main`; push with `git push origin development:main`).
-4. Optional, researched (see Findings): SCB pay comparison; decider-model routing.
+4. Done: SCB pay answers (`pay_hits` in `isakke.py`; findings below). Left: decider-model routing (see Findings; unproven gain). Pay path caveats: the classifier is gemma4 via the translate call (8 of 8 test questions right, no false positives); occupation match is lexical stem + bge-m3, so odd job titles ("kassabiträde") can map to a neighbour (the prompt tells the model to say so). Run `python3 isakke.py fetch && python3 isakke.py index` once to get `laws/ssyk.json` and the occupation embeddings (an old index.npz lacks them and pay questions fail).
 5. Hosting a live demo costs a GPU; for now the demo = repo + screenshots + a short screencast.
 
 ## Findings (15 Oct, research)
