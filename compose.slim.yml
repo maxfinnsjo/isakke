@@ -5,7 +5,8 @@ services:
   ollama:
     image: ollama/ollama
     mem_limit: 2g
-    environment: { OLLAMA_KEEP_ALIVE: 24h, OLLAMA_MAX_LOADED_MODELS: "1" }
+    cpus: 2
+    environment: { OLLAMA_KEEP_ALIVE: 60s, OLLAMA_MAX_LOADED_MODELS: "1" }  # unload bge-m3 when idle: the box is shared
     volumes: [ollama:/root/.ollama]
     healthcheck: { test: ["CMD", "ollama", "list"], interval: 5s, retries: 30 }
   models:
@@ -17,6 +18,7 @@ services:
   isakke:
     build: .
     mem_limit: 256m
+    cpus: 1
     ports: ["127.0.0.1:8095:8095"]
     environment: { OLLAMA: "http://ollama:11434", CHAT_MODEL: "", DECIDER_MODEL: "", MIN_SCORE: "0.48" }
     depends_on: { models: { condition: service_completed_successfully } }
