@@ -15,3 +15,7 @@
 3. Screenshot of the chat page for README + portfolio; push to a **new public GitHub repo** (Max says yes first; there are no secrets here, laws are public domain).
 4. Optional: a pay comparison (SCB open salary statistics by occupation), which is part of Max's idea of a workers' champion.
 5. Hosting a live demo costs a GPU; for now the demo = repo + screenshots + a short screencast.
+
+## Ideas to keep ISAKKE on the bleeding edge
+- **Decider models** (new on Ollama, Oct 2026: Liquid AI `d1` 3B, Together `tev1` 0.8B/4B, Strands `strands-decider` 2B, Bespoke `nimble`/`nimble-v3` 9B, Cloudflare `clef-flash` 9B). They turn a state + typed questions into fast decisions, not chat. Possible uses: route a question to the right law(s) before search (narrower, better retrieval); decide "answerable from the sources?" vs "ask your union / a lawyer"; tag the topic (notice, pay, hours, safety, discrimination) for the UI and stats; check that the answer's citations really support it. Small and fast, so they fit next to the chat model on 6 GB.
+- Re-run the comparison when new small models land (Ollama "newest", EuroEval Swedish leaderboard in a browser).
