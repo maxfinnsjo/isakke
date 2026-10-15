@@ -3,7 +3,7 @@
 
   python3 isakke.py fetch    download the laws from Riksdagen's open data (and SCB's occupation list) into laws/
   python3 isakke.py index    split them by paragraph (§) and embed them -> index.npz
-  python3 isakke.py serve    web chat on $PORT (default 8095); builds the index first if missing
+  python3 isakke.py serve    web chat on $HOST:$PORT (default 127.0.0.1:8095); builds the index first if missing
   python3 isakke.py ask "..."  one question in the terminal
   python3 isakke.py test     self-check of the paragraph splitter
 
@@ -19,8 +19,9 @@ HERE = Path(__file__).parent
 LAWS_DIR, INDEX = HERE / "laws", Path(os.environ.get("INDEX", HERE / "index.npz"))
 OLLAMA = os.environ.get("OLLAMA", "http://localhost:11434")
 EMBED = os.environ.get("EMBED_MODEL", "bge-m3")
-CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")
+CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")  # "" = no generated answer: show the closest paragraphs (the slim profile, runs on any CPU)
 TOP_K = 6
+MIN_SCORE = float(os.environ.get("MIN_SCORE", 0.30))  # best paragraph similarity below this = off-topic; the slim profile uses 0.48
 DECIDER = os.environ.get("DECIDER_MODEL", "isakke-decider")  # Ollama decision model (see decider.Modelfile); "" turns the off-topic check off
 SCB = "https://api.scb.se/OV0104/v1/doris/sv/ssd/AM/AM0110/AM0110A/LonYrkeRegion4AN"  # monthly pay by occupation (SSYK 2012), CC0
 
@@ -146,11 +147,26 @@ OFF_TOPIC = ("Det där ligger utanför vad jag kan hjälpa till med: svensk arbe
              "That is outside what I can help with: Swedish employment law and pay.")
 
 
+# Without a chat model nothing translates the question: bge-m3 ranks English worse (LAS 11 § was 12th), so add the Swedish terms.
+GLOSS = {"notice": "uppsägningstid", "vacation": "semester", "holiday": "semester", "overtime": "övertid", "sick": "sjuk sjuklön", "probation": "provanställning",
+         "union": "fack facklig", "fired": "uppsägning avskedande", "dismiss": "uppsägning avskedande", "parental": "föräldraledighet", "discriminat": "diskriminering",
+         "whistleblow": "visselblåsare", "safety": "arbetsmiljö skyddsombud", "bully": "mobbning kränkande särbehandling", "break": "rast", "rest": "vila",
+         "working hours": "arbetstid", "fixed-term": "visstidsanställning", "temporary": "visstidsanställning", "strike": "strejk", "pregnan": "graviditet föräldraledighet",
+         "salary": "lön", "wage": "lön", "contract": "anställningsavtal", "layoff": "uppsägning arbetsbrist", "redundan": "uppsägning arbetsbrist"}
+# "Vad tjänar en sjuksköterska?" / "What does a nurse earn?" -> the profession (group 1 or 2)
+PAY_Q = re.compile(r"\btjänar\s+(?:en |ett |man som |någon som är )?([^?.,!]+)|\b(?:what|how much)\s+(?:does|do|will)\s+(?:an?|the)?\s*([a-z\- ]+?)\s+(?:earn|make)\b", re.I)
+
+
+def gloss(q):
+    extra = [v for k, v in GLOSS.items() if k in q.lower()]
+    return q + (" (" + " ".join(extra) + ")" if extra else "")
+
+
 def on_topic(question, best):
     """Cascade: the best retrieval score settles the clear cases for free; only the in-between band goes to the decision model."""
-    if best >= 0.55 or not DECIDER and best >= 0.30:  # without a decider only the clearly off-topic are refused
+    if best >= 0.55 or not DECIDER and best >= MIN_SCORE:  # without a decider only the clearly off-topic are refused
         return True
-    if best < 0.30:
+    if best < MIN_SCORE:
         return False
     try:
         a = post("/v1/systemone", {"model": DECIDER, "state": {"question": question}, "questions": {
@@ -161,17 +177,27 @@ def on_topic(question, best):
 
 
 def ask(question, idx):
-    # the laws are Swedish and bge-m3 ranks English queries worse (LAS 11 § was 12th for the notice question)
-    sv = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0},
-                            "messages": [{"role": "user", "content": PAY_OR_TRANSLATE + question}]})["message"]["content"].strip()
-    if sv.startswith("LÖN:"):
-        hits = pay_hits(sv[4:].strip(), idx)
+    if CHAT:
+        # the laws are Swedish and bge-m3 ranks English queries worse (LAS 11 § was 12th for the notice question)
+        sv = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0},
+                                "messages": [{"role": "user", "content": PAY_OR_TRANSLATE + question}]})["message"]["content"].strip()
+        profession, query = (sv[4:].strip(), question) if sv.startswith("LÖN:") else (None, sv or question)
     else:
-        sims = idx["vecs"] @ embed([sv or question])[0]
+        m = PAY_Q.search(question)
+        profession, query = (m.group(1) or m.group(2)).strip() if m else None, gloss(question)
+    if profession:
+        hits = pay_hits(profession, idx)
+        if not hits:
+            return {"answer": "Inga lönedata hittades. / No pay data found.", "sources": []}
+    else:
+        sims = idx["vecs"] @ embed([query])[0]
         if not on_topic(question, sims.max()):
             return {"answer": OFF_TOPIC, "sources": []}
         top = np.argsort(sims)[::-1][:TOP_K]
         hits = [{"label": str(idx["labels"][i]), "text": str(idx["texts"][i])} for i in top]
+    if not CHAT:
+        top3 = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text'][:350]}{'…' if len(h['text']) > 350 else ''}" for n, h in enumerate(hits[:3]))
+        return {"answer": "Närmaste träffar (ingen AI-genererad text) / Closest matches (no AI-generated text):\n\n" + top3, "sources": hits}
     sources = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text']}" for n, h in enumerate(hits))
     r = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0.2},
                            "messages": [{"role": "user", "content": PROMPT.format(sources=sources, question=question)}]})
@@ -247,4 +273,4 @@ if __name__ == "__main__":
         H.idx = load()
         port = int(os.environ.get("PORT", 8095))
         print(f"ISAKKE on http://localhost:{port}")
-        ThreadingHTTPServer(("", port), H).serve_forever()
+        ThreadingHTTPServer((os.environ.get("HOST", "127.0.0.1"), port), H).serve_forever()
