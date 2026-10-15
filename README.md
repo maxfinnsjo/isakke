@@ -4,6 +4,8 @@
 
 A small RAG (retrieval-augmented generation) app, local first: the desktop setup runs entirely on your own machine, with no cloud API and no data leaving it. A slim profile runs on any CPU, and the public demo lets free-tier hosted models write the answers (see [Hosted models](#optional-hosted-free-tier-models)).
 
+**Live demo: [max.contigomedia.se/isakke](https://max.contigomedia.se/isakke)**, the slim profile on a small CPU-only server. Free-tier hosted models write the answers, and when their daily quota is used up the page shows the closest paragraphs instead.
+
 ![Screencast: a Swedish law question with its cited paragraphs, an English question, and a pay question](docs/demo.gif)
 
 ## Try it
