@@ -11,7 +11,7 @@ services:
     ports: ["127.0.0.1:8095:8095"]
     environment:
       OLLAMA: http://ollama:11434
-      CHAT_MODEL: ${CHAT_MODEL:-gemma3:4b}
+      CHAT_MODEL: ${CHAT_MODEL:-gemma4:e4b}
       INDEX: /app/data/index.npz
     volumes: [./data:/app/data]
     depends_on: [ollama]

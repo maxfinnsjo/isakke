@@ -1,7 +1,5 @@
 # ISAKKE handover (from the Admin session, 15 Oct 2026)
 
-**Why it exists:** a portfolio demo of RAG, and the link in Max's Vizzit application (AI developer, local FAQ/RAG project; deadline **Fri 16 Oct**). Letter and CV are in `~/Documents/Jobb/ansokningar/2026-10-vizzit/`. Add the demo link to the letter before he sends it. Then it's a showcase for the portfolio (`~/Code/portfolio`, live at max.contigomedia.se/portfolio) and GitHub.
-
 **Rules from Max:** budget first: free/local only, no paid APIs ("crafty, not blingy"). Commits without Claude trailers. Max says yes before anything goes public or gets sent.
 
 ## State
@@ -10,10 +8,10 @@
 - GPU: RTX 3060 Laptop, 6 GB VRAM, 14 GB RAM.
 
 ## Next
-1. **Chat model: comparison done (`bench-results.md`). Pick: gemma4:e4b (fallback qwen3.5:4b).** Set it as default in `isakke.py` and `compose.yml`, then fix the prompt language (all models answered English in Swedish) and check karensavdrag retrieval. Old note: Max has had poor results with gemma3. `python3 bench.py <models…>` runs three questions with known answers (5 years → 3 months notice, LAS 11 §; 25 holiday days, SemL 4 §; employer pays sick pay days 1–14 minus karensavdrag, SjLL). Results: `bench-results.md`. gemma4:e4b needs a newer Ollama (0.30.4 installed, `/usr/local/bin`, needs sudo to update). Set the winner as the default in `isakke.py` and `compose.yml`.
-2. Tune the prompt: gemma3 was over-emotional and said "avskedad" (fired for cause) about a notice question. Keep answers short, factual and warm.
-3. Screenshot of the chat page for README + portfolio; push to a **new public GitHub repo** (Max says yes first; there are no secrets here, laws are public domain).
-4. Optional: a pay comparison (SCB open salary statistics by occupation), which is part of Max's idea of a workers' champion.
+1. Done: default chat model is gemma4:e4b (`isakke.py`, `compose.yml`; fallback qwen3.5:4b). Prompt is English with the answer-language rule last; the question is translated to Swedish before embedding (English queries ranked LAS 11 § 12th, now top). Karensavdrag retrieves SjLL 6 §.
+2. Open: the sick-pay answer is still weak. gemma4:e4b says "sickness benefit" and doesn't plainly say the employer pays days 1–14 (SjLL 7 § is retrieved). Try a prompt hint, a bigger TOP_K, or ministral-3:8b if speed is acceptable. Re-run `python3 bench.py gemma4:e4b` to check.
+3. Screenshot of the chat page for README; push to a **new public GitHub repo** (Max says yes first; there are no secrets here, laws are public domain).
+4. Optional: a pay comparison (SCB open salary statistics by occupation).
 5. Hosting a live demo costs a GPU; for now the demo = repo + screenshots + a short screencast.
 
 ## Ideas to keep ISAKKE on the bleeding edge

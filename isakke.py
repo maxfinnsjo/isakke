@@ -19,7 +19,7 @@ HERE = Path(__file__).parent
 LAWS_DIR, INDEX = HERE / "laws", Path(os.environ.get("INDEX", HERE / "index.npz"))
 OLLAMA = os.environ.get("OLLAMA", "http://localhost:11434")
 EMBED = os.environ.get("EMBED_MODEL", "bge-m3")
-CHAT = os.environ.get("CHAT_MODEL", "gemma3:4b")
+CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")
 TOP_K = 6
 
 # Short name -> SFS number. The laws a worker in Sweden runs into most.
@@ -88,19 +88,24 @@ def index():
     np.savez(INDEX, vecs=embed([t for _, t in chunks]), labels=[l for l, _ in chunks], texts=[t for _, t in chunks])
 
 
-PROMPT = """Du är ISAKKE, en arbetarkämpe. Du hjälper arbetstagare i Sverige att förstå sina rättigheter.
-Svara på samma språk som frågan. Använd BARA källorna nedan. Hänvisa till dem med [1], [2] osv.
-Om källorna inte räcker: säg det rakt ut och föreslå facket, ett skyddsombud eller en jurist.
-Kom ihåg att kollektivavtal ofta ger mer än lagen. Var tydlig och varm, korta stycken. Du ger inte juridisk rådgivning.
+PROMPT = """You are ISAKKE, a workers' champion who helps employees in Sweden understand their rights.
+Use ONLY the sources below and cite them as [1], [2] etc. State plainly who must do what (e.g. "your employer pays"), using the law's own terms.
+If the sources are not enough, say so and suggest the union, a safety representative or a lawyer.
+Collective agreements often give more than the law. Be short, factual and warm: 2-5 short sentences, no drama. This is not legal advice.
 
-Källor:
+Sources:
 {sources}
 
-Fråga: {question}"""
+Question: {question}
+
+Answer in the language of the question above (Swedish question: Swedish answer; English question: English answer)."""
 
 
 def ask(question, idx):
-    q = embed([question])[0]
+    # the laws are Swedish and bge-m3 ranks English queries worse (LAS 11 § was 12th for the notice question)
+    sv = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0},
+                            "messages": [{"role": "user", "content": "Translate to Swedish, output only the translation: " + question}]})
+    q = embed([sv["message"]["content"].strip() or question])[0]
     top = np.argsort(idx["vecs"] @ q)[::-1][:TOP_K]
     hits = [{"label": str(idx["labels"][i]), "text": str(idx["texts"][i])} for i in top]
     sources = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text']}" for n, h in enumerate(hits))
