@@ -10,6 +10,7 @@ services:
     environment: { OLLAMA_KEEP_ALIVE: 60s, OLLAMA_MAX_LOADED_MODELS: "1" }
     volumes: [ollama:/root/.ollama]
     healthcheck: { test: ["CMD", "ollama", "list"], interval: 5s, retries: 30 }
+    logging: &logs { driver: json-file, options: { max-size: 5m, max-file: "3" } }  # Docker's default log has no size limit
   models:
     image: ollama/ollama
     environment: { OLLAMA_HOST: "http://ollama:11434" }
@@ -23,6 +24,7 @@ services:
     cpus: 0.5
     environment: { OLLAMA: "http://ollama:11434", CHAT_MODEL: "", DECIDER_MODEL: "", MIN_SCORE: "0.48", RATE_LIMIT: "20" }
     depends_on: { models: { condition: service_completed_successfully } }
+    logging: *logs
     networks: [default, caddy-net]
     labels:
       caddy: isakke.206.168.215.98.sslip.io

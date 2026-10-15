@@ -35,7 +35,7 @@ Or with Docker, in one of two profiles:
 
 | | Desktop (`compose.yml`) | Slim (`compose.slim.yml`) |
 |---|---|---|
-| Hardware | NVIDIA GPU with ~6 GB, 14+ GB RAM | any CPU, x86 or ARM, ~2 GB RAM, no GPU |
+| Hardware | NVIDIA GPU with ~6 GB, 14+ GB RAM | any CPU, ~2 GB RAM, no GPU |
 | Answers | `gemma4:e4b` writes a cited answer, `tev1` decision model on the CPU checks the borderline off-topic cases | no generated text: the closest paragraphs, cited |
 | First start | pulls ~12 GB of models (about 15 min at 13 MB/s) | pulls ~1.2 GB |
 | Speed | ~3 s per answer warm, ~100 s for the first one while the models load | 0.1–0.2 s warm, ~2.5 s after the model has unloaded |
@@ -45,7 +45,7 @@ docker compose up -d                       # desktop; needs the NVIDIA container
 docker compose -f compose.slim.yml up -d   # slim
 ```
 
-Then http://127.0.0.1:8095. The slim profile exists because small models can't do this job on a CPU: below ~3B they invent figures ("14 days notice"), and a correct 3B takes 30–100 s per answer on 4 threads. So it shows the law instead of paraphrasing it. A live slim demo runs on a 2 vCPU / 4 GB VPS (`deploy/`), capped at 2 GB RAM, using ~100 MB when idle. Arm is not tested.
+Then http://127.0.0.1:8095. The slim profile exists because small models can't do this job on a CPU: below ~3B they invent figures ("14 days notice"), and a correct 3B takes 30–100 s per answer on 4 threads. So it shows the law instead of paraphrasing it. A live slim demo runs on a 2 vCPU / 4 GB VPS (`deploy/`), capped at 2 GB RAM, using ~100 MB when idle.
 
 ![The slim demo answering a pay question](docs/slim.png)
 

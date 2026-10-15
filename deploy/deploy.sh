@@ -3,6 +3,7 @@
 #
 #   deploy/deploy.sh             build + start (or update)
 #   deploy/deploy.sh --dry-run   show what would be sent, change nothing
+#   deploy/deploy.sh --logs      follow the demo's log: one JSON line per page visit and question
 #   deploy/deploy.sh --stop      take it down at once (frees ~1.3 GB if it was in use)
 #   deploy/deploy.sh --force     skip the free-memory check
 #
@@ -20,6 +21,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY="--dry-run" ;;
     --force)   FORCE=1 ;;
+    --logs)    exec ssh "$VPS" "cd ~/$DIR && docker compose logs -f --tail 50 isakke" ;;
     --stop)    ssh "$VPS" "cd ~/$DIR && docker compose down" && echo "stopped"; exit ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac

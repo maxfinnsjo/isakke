@@ -15,7 +15,7 @@
 5. **Live demo:** https://isakke.206.168.215.98.sslip.io/ on the shared VPS (2 vCPU, 3.9 GB RAM, ~2 GB free next to other apps). `deploy/deploy.sh` (needs a clean git tree, aborts under 1.8 GB free RAM; `--stop` takes it down, `--dry-run` previews). Ollama capped at 2 GB, app 256 MB, bge-m3 unloads after 60 s idle (~100 MB idle). Per-IP limit 20/min (Caddy overwrites a spoofed X-Forwarded-For, tested). The image set is ~7 GB of the VPS disk. Redeploy after changing code or laws: commit, `deploy/deploy.sh`. A changed `laws/` needs `python3 isakke.py index` and a commit of `index.npz`.
 6. CPU findings (4 threads, no GPU): qwen3.5:0.8b/2b and granite4:micro are fast-ish but wrong (invented days, mixed languages) and can't even do the translate/pay-intent prompt; ministral-3:3b is correct but 30–100 s per answer and 3 GB. qwen3.5:4b/gemma4:e2b not measured (too big for the VPS anyway). Hence slim = retrieval only.
 7. Desktop Docker test (from scratch, 12 GB download) passed: GPU passthrough, decider on CPU, answers right. First request after start ~100 s (four models load). The test volume `isakke_ollama` (~12 GB) is still on this machine: `docker volume rm isakke_ollama` to free it.
-8. Ideas left: a real answer on a CPU host needs a better small model than today's (re-run `cpubench`-style tests when one lands); ARM/phone untested; a free-tier GPU or cheap GPU host would allow the desktop profile as the demo.
+8. Ideas left: a real answer on a CPU host needs a better small model than today's (re-run `cpubench`-style tests when one lands); a free-tier GPU or cheap GPU host would allow the desktop profile as the demo.
 
 ## Findings (15 Oct, research)
 **SCB pay data: feasible, no key, CC0.** PxWebApi v1 works: `https://api.scb.se/OV0104/v1/doris/sv/ssd/AM/AM0110/AM0110A/LonYrkeRegion4AN` (average monthly pay 2023–2025 by region, sector, SSYK 2012 occupation (432 codes) and sex; also base pay, headcount, women's pay as % of men's). POST a JSON query with `"response":{"format":"csv"}`; output is latin-1. Example: 2221 Grundutbildade sjuksköterskor 2025 = 44 000 kr (men 45 200, women 43 900). v2 (`statistikdatabasen.scb.se/api/v2`, 30 calls per 10 s) exists too. Plan: a "pay" intent that maps the profession in the question to an SSYK code (embed the 432 titles with bge-m3, like the laws), fetches live, and answers with the figure, the gender gap and the source. It needs its own code path, since the laws prompt says "use ONLY the sources".
@@ -28,3 +28,10 @@
 
 ## Ideas to keep ISAKKE on the bleeding edge
 - Re-run the comparison when new small models land (Ollama "newest", EuroEval Swedish leaderboard in a browser).
+
+## Roadmap
+- ARM / phone: run the slim profile on an ARM host or a phone (Termux + Ollama). Parked by Max, not started.
+- A hosted free-tier model to write the answer on the slim demo (idea from the skandinavetnyhets app), keeping the RAG and the citations. Not started.
+
+## Logging
+`deploy/deploy.sh --logs` follows the live demo's log: one JSON line per page visit, question (with client IP, kind law/pay/refused, top paragraphs, ms), rate-limit hit or backend error. Docker keeps 3 x 5 MB, then rotates.

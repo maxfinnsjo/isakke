@@ -216,8 +216,19 @@ def limited(client):
     return bool(RATE) and len(times) > RATE
 
 
+def log(**kw):
+    """One JSON line per event on stdout: `docker compose logs` is the demo's access log."""
+    print(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), **kw}, ensure_ascii=False), flush=True)
+
+
 class H(BaseHTTPRequestHandler):
     idx = None
+
+    def log_message(self, *args):  # the default stderr line has the proxy's IP and no question; log() replaces it
+        pass
+
+    def client(self):
+        return self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or self.client_address[0]  # behind Caddy
 
     def send(self, code, body, ctype="application/json"):
         b = body.encode()
@@ -229,6 +240,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
+            log(event="page", client=self.client(), ua=self.headers.get("User-Agent", "")[:80])
             return self.send(200, (HERE / "index.html").read_text(), "text/html; charset=utf-8")
         if self.path == "/api/mode":
             return self.send(200, json.dumps({"chat": bool(CHAT)}))
@@ -243,11 +255,18 @@ class H(BaseHTTPRequestHandler):
             return self.send(400, '{"error":"send {\\"question\\": \\"...\\"}"}')
         if not q:
             return self.send(400, '{"error":"empty question"}')
-        if limited(self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or self.client_address[0]):  # behind Caddy
+        if limited(self.client()):
+            log(event="rate_limited", client=self.client(), q=q[:200])
             return self.send(429, '{"error":"för många frågor, vänta en minut / too many questions, wait a minute"}')
+        t = time.time()
         try:
-            self.send(200, json.dumps(ask(q, H.idx), ensure_ascii=False))
+            r = ask(q, H.idx)
+            labels = [h["label"] for h in r["sources"]]
+            log(event="ask", client=self.client(), q=q[:200], kind="refused" if not labels else "pay" if labels[0].startswith("SCB") else "law",
+                top=labels[:3], ms=round(1000 * (time.time() - t)))
+            self.send(200, json.dumps(r, ensure_ascii=False))
         except OSError as e:  # Ollama or SCB down or slow
+            log(event="error", client=self.client(), q=q[:200], error=str(e)[:200], ms=round(1000 * (time.time() - t)))
             self.send(503, json.dumps({"error": f"backend unavailable (Ollama or SCB): {e}"}))
 
 
