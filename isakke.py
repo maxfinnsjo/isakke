@@ -214,7 +214,7 @@ def generate(question, hits, client):
         body = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2, "max_tokens": 800}
         if "gpt-oss" in model or provider == "gemini":  # thinking models: keep the thinking short or it eats max_tokens
             body["reasoning_effort"] = "low"
-        elif provider == "ollama":  # a local gemma4 thinks by default on /v1 and used all 800 tokens before answering
+        elif provider in ("ollama", "ollamacloud"):  # gemma4 thinks by default on /v1 and used all 800 tokens before answering
             body["reasoning_effort"] = "none"
         req = urllib.request.Request(base.rstrip("/") + "/chat/completions", json.dumps(body).encode(),
                                      {"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})})
