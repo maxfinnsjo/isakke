@@ -16,12 +16,15 @@ A small RAG (retrieval-augmented generation) app that runs fully local: no cloud
 
 **Pay questions:** the same call that translates the question also spots "what does a nurse earn?". The 431 SSYK occupations from SCB are embedded too; the closest ones are looked up live in SCB's open API (no key, CC0) and passed to the model as sources, biggest occupation first. Needs internet access to `api.scb.se`.
 
+**Off-topic check (decision model):** a question that is clearly about work passes, one that clearly isn't ("Hur lagar jag pasta?") gets a short refusal, and only the borderline band is judged by a decision model, [Together's `tev1`](https://ollama.com/library/tev1) through Ollama's `/v1/systemone` endpoint, which returns a probability instead of text. It runs on the CPU (`decider.Modelfile`) so it doesn't push the chat model out of a small GPU. It is optional: without it, only the clearly off-topic are refused. Measured on 12 on-topic and 7 off-topic questions: the retrieval score alone separates them by a margin of 0.05, `tev1` by 0.80 vs 0.02. Using it to route questions to a single law did not help: retrieval already ranked the right paragraph in the top six for 16 of 16 test questions.
+
 Plain Python and numpy, one file (`isakke.py`), a stdlib web server and one HTML page. At this size (610 vectors) a matrix product beats running a vector database.
 
 ## Run
 
 ```sh
 ollama pull bge-m3 && ollama pull gemma4:e4b
+ollama pull tev1 && ollama create isakke-decider -f decider.Modelfile   # optional: off-topic check, needs Ollama 0.35+
 pip install numpy
 python3 isakke.py fetch      # laws/ is already in the repo; this refreshes it
 python3 isakke.py serve      # builds the index on first run, then http://localhost:8095

@@ -21,6 +21,7 @@ OLLAMA = os.environ.get("OLLAMA", "http://localhost:11434")
 EMBED = os.environ.get("EMBED_MODEL", "bge-m3")
 CHAT = os.environ.get("CHAT_MODEL", "gemma4:e4b")
 TOP_K = 6
+DECIDER = os.environ.get("DECIDER_MODEL", "isakke-decider")  # Ollama decision model (see decider.Modelfile); "" turns the off-topic check off
 SCB = "https://api.scb.se/OV0104/v1/doris/sv/ssd/AM/AM0110/AM0110A/LonYrkeRegion4AN"  # monthly pay by occupation (SSYK 2012), CC0
 
 # Short name -> SFS number. The laws a worker in Sweden runs into most.
@@ -141,6 +142,24 @@ def pay_hits(profession, idx):
             for occ, sex in best]
 
 
+OFF_TOPIC = ("Det där ligger utanför vad jag kan hjälpa till med: svensk arbetsrätt och löner.\n"
+             "That is outside what I can help with: Swedish employment law and pay.")
+
+
+def on_topic(question, best):
+    """Cascade: the best retrieval score settles the clear cases for free; only the in-between band goes to the decision model."""
+    if best >= 0.55 or not DECIDER and best >= 0.30:  # without a decider only the clearly off-topic are refused
+        return True
+    if best < 0.30:
+        return False
+    try:
+        a = post("/v1/systemone", {"model": DECIDER, "state": {"question": question}, "questions": {
+            "work": {"type": "noul", "instructions": "Is this a question about rights, pay or conditions at work?"}}})
+        return a["answers"]["work"]["noul"] >= 0.5
+    except OSError:  # decider not installed or Ollama too old: let the question through
+        return True
+
+
 def ask(question, idx):
     # the laws are Swedish and bge-m3 ranks English queries worse (LAS 11 § was 12th for the notice question)
     sv = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0},
@@ -148,7 +167,10 @@ def ask(question, idx):
     if sv.startswith("LÖN:"):
         hits = pay_hits(sv[4:].strip(), idx)
     else:
-        top = np.argsort(idx["vecs"] @ embed([sv or question])[0])[::-1][:TOP_K]
+        sims = idx["vecs"] @ embed([sv or question])[0]
+        if not on_topic(question, sims.max()):
+            return {"answer": OFF_TOPIC, "sources": []}
+        top = np.argsort(sims)[::-1][:TOP_K]
         hits = [{"label": str(idx["labels"][i]), "text": str(idx["texts"][i])} for i in top]
     sources = "\n\n".join(f"[{n + 1}] {h['label']}: {h['text']}" for n, h in enumerate(hits))
     r = post("/api/chat", {"model": CHAT, "stream": False, "think": False, "options": {"temperature": 0.2},

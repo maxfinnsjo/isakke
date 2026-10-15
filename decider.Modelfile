@@ -1,0 +1,4 @@
+# CPU-only copy of the decision model, so it does not evict the chat model from a small GPU: ollama create isakke-decider -f decider.Modelfile
+FROM tev1
+PARAMETER num_gpu 0
+PARAMETER num_ctx 2048
