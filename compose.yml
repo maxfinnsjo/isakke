@@ -1,0 +1,19 @@
+services:
+  ollama:
+    image: ollama/ollama
+    volumes: [ollama:/root/.ollama]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]  # remove this block to run on CPU
+  isakke:
+    build: .
+    ports: ["127.0.0.1:8095:8095"]
+    environment:
+      OLLAMA: http://ollama:11434
+      CHAT_MODEL: ${CHAT_MODEL:-gemma3:4b}
+      INDEX: /app/data/index.npz
+    volumes: [./data:/app/data]
+    depends_on: [ollama]
+volumes:
+  ollama:

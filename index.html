@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ISAKKE · arbetarkämpen</title>
+<style>
+  :root { --bg:#f6f1e7; --ink:#1d1a16; --red:#b3261e; --mute:#6b6257; --card:#fffaf0; --line:#e3d9c6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16130f; --ink:#f1e9dc; --red:#ff6b5e; --mute:#a99d8c; --card:#211d18; --line:#3a332a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.55 system-ui, sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 120px; }
+  h1 { font:900 44px/1 Georgia, serif; letter-spacing:.04em; margin:0; color:var(--red); }
+  .tag { color:var(--mute); margin:6px 0 20px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+  .chips button { border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:18px; padding:8px 14px; font:inherit; font-size:15px; cursor:pointer; }
+  .msg { margin:18px 0; }
+  .q { font-weight:700; }
+  .a { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--red); border-radius:8px; padding:14px 16px; white-space:pre-wrap; }
+  details { margin-top:8px; color:var(--mute); font-size:15px; }
+  details p { margin:6px 0; }
+  form { position:fixed; left:0; right:0; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 16px; }
+  form div { max-width:760px; margin:0 auto; display:flex; gap:8px; }
+  input { flex:1; font:inherit; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+  form button { font:inherit; font-weight:700; padding:0 20px; border:0; border-radius:8px; background:var(--red); color:#fff; cursor:pointer; }
+  .note { color:var(--mute); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ISAKKE</h1>
+  <p class="tag">Arbetarkämpen. Frågar du om dina rättigheter på jobbet, svarar jag ur svensk arbetsrätt och visar exakt vilken paragraf. Ask in English too.</p>
+  <div class="chips" id="chips"></div>
+  <div id="log"></div>
+  <p class="note">Bygger på LAS, MBL, arbetstidslagen, semesterlagen, arbetsmiljölagen, diskrimineringslagen, sjuklönelagen, föräldraledighetslagen, förtroendemannalagen och visselblåsarlagen (Riksdagens öppna data). Kollektivavtal ger ofta mer än lagen. Inte juridisk rådgivning: fråga facket.</p>
+</main>
+<form id="f"><div><input id="q" placeholder="Fråga ISAKKE…" aria-label="Fråga" autocomplete="off"><button>Fråga</button></div></form>
+<script>
+const EXAMPLES = ["Hur lång uppsägningstid har jag?", "Får chefen kräva övertid?", "Vad gäller vid provanställning?", "Can I be fired for joining a union?", "Vem betalar när jag är sjuk?"];
+const log = document.getElementById("log"), q = document.getElementById("q");
+const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+document.getElementById("chips").innerHTML = EXAMPLES.map(e => `<button type="button">${e}</button>`).join("");
+document.getElementById("chips").onclick = e => { if (e.target.tagName === "BUTTON") ask(e.target.textContent); };
+document.getElementById("f").onsubmit = e => { e.preventDefault(); if (q.value.trim()) ask(q.value.trim()); q.value = ""; };
+async function ask(text) {
+  const m = document.createElement("div");
+  m.className = "msg";
+  m.innerHTML = `<div class="q">${esc(text)}</div><div class="a">ISAKKE läser lagen…</div>`;
+  log.append(m); m.scrollIntoView({ behavior: "smooth" });
+  try {
+    const r = await fetch("/api/ask", { method: "POST", body: JSON.stringify({ question: text }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    m.querySelector(".a").textContent = d.answer;
+    m.insertAdjacentHTML("beforeend", `<details><summary>Källor (${d.sources.length})</summary>${d.sources.map((s, n) => `<p><b>[${n + 1}] ${esc(s.label)}</b> ${esc(s.text)}</p>`).join("")}</details>`);
+  } catch (err) { m.querySelector(".a").textContent = "Något gick fel: " + err.message; }
+}
+</script>
+</body>
+</html>
