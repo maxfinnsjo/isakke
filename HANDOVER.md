@@ -4,13 +4,13 @@
 
 ## State
 - Works end to end: `fetch` → `index` (610 paragraphs, bge-m3, 38 s) → `ask`/`serve` (port 8095). Splitter self-test passes. Search finds the right paragraphs, also for English questions (LAS 11 § for notice, ATL 8 § overtime, SemL 4 § holidays, SjLL sick pay).
-- Ollama is now the repo package `ollama-cuda` 0.40.4 (paru keeps it current). `ollama serve` runs as the user (models in `~/.ollama`); start it with `ollama serve &` if it's not running. Models here: bge-m3, gemma3:4b, qwen3.5:4b/9b, gemma4:e4b, lfm2.5:8b, granite4.2:8b, ministral-3:8b (remove the losers with `ollama rm` to free ~25 GB, ask Max).
+- Ollama is now the repo package `ollama-cuda` 0.40.4 (paru keeps it current). `ollama serve` runs as the user (models in `~/.ollama`); start it with `ollama serve &` if it's not running. Models here: bge-m3, gemma4:e4b, qwen3.5:4b (the losers of the comparison are removed).
 - GPU: RTX 3060 Laptop, 6 GB VRAM, 14 GB RAM.
 
 ## Next
 1. Done: default chat model is gemma4:e4b (`isakke.py`, `compose.yml`; fallback qwen3.5:4b). Prompt is English with the answer-language rule last; the question is translated to Swedish before embedding (English queries ranked LAS 11 § 12th, now top). Karensavdrag retrieves SjLL 6 §.
 2. Open: the sick-pay answer is still weak. gemma4:e4b says "sickness benefit" and doesn't plainly say the employer pays days 1–14 (SjLL 7 § is retrieved). Try a prompt hint, a bigger TOP_K, or ministral-3:8b if speed is acceptable. Re-run `python3 bench.py gemma4:e4b` to check.
-3. Screenshot of the chat page for README; push to a **new public GitHub repo** (Max says yes first; there are no secrets here, laws are public domain).
+3. Screenshot is in `docs/screenshot.png` and the README. Push to a **new public GitHub repo** (Max says yes first; there are no secrets here, laws are public domain).
 4. Optional: a pay comparison (SCB open salary statistics by occupation).
 5. Hosting a live demo costs a GPU; for now the demo = repo + screenshots + a short screencast.
 
