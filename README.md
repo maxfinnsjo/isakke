@@ -45,15 +45,15 @@ docker compose up -d                       # desktop; needs the NVIDIA container
 docker compose -f compose.slim.yml up -d   # slim
 ```
 
-Then http://127.0.0.1:8095. The slim profile exists because small models can't do this job on a CPU: below ~3B they invent figures ("14 days notice"), and a correct 3B takes 30–100 s per answer on 4 threads. So it shows the law instead of paraphrasing it. A live slim demo runs on a 2 vCPU / 4 GB VPS (`deploy/`), capped at 2 GB RAM, using ~100 MB when idle.
+Then http://127.0.0.1:8095. The slim profile exists because small models can't do this job on a CPU: below ~3B they invent figures ("14 days notice"), and a correct 3B takes 30–100 s per answer on 4 threads. So it shows the law instead of paraphrasing it. A live slim demo runs on a 2 vCPU / 4 GB VPS with no GPU (`deploy/`), capped at 2 GB RAM, using ~100 MB when idle; retrieval runs there and free-tier hosted models write the answers (see below), falling back to the plain paragraphs when they are out of quota.
 
-![The slim demo answering a pay question](docs/slim.png)
+![The live slim demo: a hosted free-tier model writes the answer from the retrieved paragraphs, shown below it](docs/live.png)
 
 Settings: `CHAT_gemma4:e4b`, `EMBED_gemma4:e4b`, `OLLAMA`, `PORT`, `INDEX`.
 
 ## Optional: hosted free-tier models
 
-The slim demo can let free-tier models write the answer while retrieval, the SCB lookup and the citations stay local. Set `LLM_CHAIN="provider:model,…"` plus the keys (see `.env.example`; providers: gemini, groq, openrouter (`:free` models only), ollamacloud, or any OpenAI-compatible `default` via `LLM_BASE_URL`). Models are tried in order and one that runs out of quota is skipped until it resets. The number of AI answers is capped per day (`LLM_DAILY_MAX`, `LLM_PER_IP_DAY`); beyond the caps, or when every model fails, the page shows the closest paragraphs instead. Numbers in an answer that are not in the cited paragraphs are flagged under it. The page tells visitors that the question is sent to an external provider.
+The slim demo can let free-tier models write the answer while retrieval, the SCB lookup and the citations stay local. Set `LLM_CHAIN="provider:model,…"` plus the keys (see `.env.example`; providers: gemini, groq, openrouter (`:free` models only), ollamacloud, or any OpenAI-compatible `default` via `LLM_BASE_URL`). Models are tried in order and one that runs out of quota is skipped until it resets. The number of AI answers is capped per day (`LLM_DAILY_MAX`, `LLM_PER_IP_DAY`); beyond the caps, or when every model fails, the page shows the closest paragraphs instead. Numbers in an answer that are not in the cited paragraphs are flagged under it. The page tells visitors that the question is sent to an external provider, and says under each answer which model wrote it. Every question is logged as one JSON line (client, question, kind, paragraphs, model, time) and Docker keeps three 5 MB files, so the demo's log never fills the disk.
 
 ## Limits
 
