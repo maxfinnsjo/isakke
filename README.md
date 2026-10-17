@@ -58,6 +58,8 @@ The desktop profile translates the question with the chat model first. The slim 
 | First start | pulls ~12 GB of models (about 15 min at 13 MB/s) | pulls ~1.2 GB |
 | Speed | ~3 s per answer warm, ~100 s for the first one while the models load | 0.1–0.2 s warm, ~2.5 s after the model has unloaded |
 
+Live demo: no decider. It runs the slim profile, so the off-topic check uses the retrieval score alone.
+
 ```sh
 docker compose up -d                       # desktop; needs the NVIDIA container toolkit (nvidia-ctk runtime configure --runtime=docker)
 docker compose -f compose.slim.yml up -d   # slim

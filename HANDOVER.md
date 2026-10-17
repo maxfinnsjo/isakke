@@ -30,6 +30,7 @@
 - Re-run the comparison when new small models land (Ollama "newest", EuroEval Swedish leaderboard in a browser).
 
 ## Roadmap
+- Decider in the live demo (low priority, parked 17 Oct): it is off (`DECIDER_MODEL: ""`, 2 GB cap). Test whether `tev1:0.8b` fits next to bge-m3, then decide.
 - ARM / phone: run the slim profile on an ARM host or a phone (Termux + Ollama). Parked by Max, not started.
 - Hosted free-tier models for the slim demo: LIVE since 15 Oct. `~/apps/isakke/.env` on the VPS (mode 600, never in the repo) holds the keys copied server-side from skandinavet's `.env` (LLM_API_KEY, GROQ_, OLLAMA_, OPENROUTER_) and ISAKKE's own chain: ollamacloud:gemma4:31b, groq:openai/gpt-oss-120b, ollamacloud:gpt-oss:120b, openrouter nvidia nemotron :free; caps 100 AI answers/day, 8 per visitor. The Gemini models were left out (skandinavet had them out of quota). The keys and the free quotas are SHARED with skandinavet: if the news channel starves, lower LLM_DAILY_MAX or take gpt-oss:120b out of the chain; to switch AI off, delete the LLM_CHAIN line there and run `deploy/deploy.sh` (back to search mode). Live test: gemma4:31b via Ollama Cloud, 1-6 s, correct in sv and en, the number check flags the correct "14 days" (a sum of 1+13). Tested with a fake provider (order, 429/402 blocking, per-client cap, fallback to search mode) and with local gemma4 over /v1 (note: a thinking model needs reasoning_effort set or it uses all max_tokens; done per provider). Add providers in PROVIDERS. This HANDOVER and deploy/ show the demo URL in the public repo.
 
